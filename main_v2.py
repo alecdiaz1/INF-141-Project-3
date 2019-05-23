@@ -40,6 +40,8 @@ def process_file(file_path):
 
 def create_index(url, text):
     """Creates inverted index with positional information and adds documents to document set for counting later."""
+    # TODO: Make this function store all this information in a database instead of dumping to a JSON
+    # TODO: Store url: term_count in a different table? So we don't have a copy for every word this url contains
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1

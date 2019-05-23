@@ -40,22 +40,25 @@ def process_file(file_path):
 
 def create_index(url, text):
     """Creates inverted index with positional information and adds documents to document set for counting later."""
+    term_count = 0
     for index, word in enumerate(word_tokenize(text)):
+        term_count += 1
         if word not in INDEX:
-            INDEX[word] = {url: [index]}
+            INDEX[word] = {url: {"locations": [index]}}
         else:
             if url in INDEX[word]:
-                INDEX[word][url].append(index)
+                INDEX[word][url]["locations"].append(index)
             else:
-                INDEX[word].update({url: [index]})
-        DOCUMENTS.add(url)
+                INDEX[word][url] = {"locations": [index]}
+        INDEX[word][url]["term_count"] = term_count
+    DOCUMENTS.add(url)
 
 
 def calc_tf_idf(term, url, db):
     """Calculate the tf-idf for a term and url pair."""
     # TODO: Figure out better heuristic, possibly by analyzing HTML tags
-    tf = len(db[term][url])
-    idf = math.log((db["doc_count"] / len(db[term])), 10)
+    tf = len(db[term][url]) / db[term][url]["term_count"]
+    idf = math.log((db["doc_count"] / len(db[term])))
     return tf * idf
 
 

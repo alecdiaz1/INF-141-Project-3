@@ -4,6 +4,7 @@ import math
 from collections import defaultdict
 from pathlib import Path
 from nltk import word_tokenize
+from nltk.corpus import stopwords
 
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
@@ -13,6 +14,8 @@ FILE_URL_PAIRS = dict()
 
 INDEX = defaultdict()
 DOCUMENTS = set()
+
+STOP_WORDS = set(stopwords.words('english'))
 
 
 def map_file_url():
@@ -45,7 +48,7 @@ def create_index(url, text):
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1
-        if word not in INDEX:
+        if word not in STOP_WORDS and word not in INDEX:
             INDEX[word] = {url: {"locations": [index]}}
         else:
             if url in INDEX[word]:

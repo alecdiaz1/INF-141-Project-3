@@ -2,11 +2,15 @@ import json
 import string
 import math
 import nltk
+import re
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
 from nltk import word_tokenize
 from nltk.corpus import stopwords
+from collections import Counter
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
@@ -65,23 +69,33 @@ def create_index(url, text):
     DOCUMENTS.add(url)
 
 
+def add_tf_idf():
+    for term in INDEX:
+        try:
+            for url in INDEX[term]:
+                INDEX[term][url]["tf-idf"] = calc_tf_idf(term, url, INDEX)
+        except TypeError:
+            pass
+
+
+def calc_tf(term, url, db):
+    return len(db[term][url]) / db[term][url]["term_count"]
+
+
+def calc_idf(term, db):
+    return math.log((db["doc_count"] / len(db[term])))
+
+
 def calc_tf_idf(term, url, db):
     """Calculate the tf-idf for a term and url pair."""
     # TODO: Figure out better heuristic, possibly by analyzing HTML tags
-    tf = len(db[term][url]) / db[term][url]["term_count"]
-    idf = math.log((db["doc_count"] / len(db[term])))
-    return tf * idf
+    return calc_tf(term, url, db) * calc_idf(term, db)
 
-
-# def calc_tf_idf_query(term, db):
-    # tf =
 
 def query_db(query):
     """Calculates the tf-idf for every url the term occurs in. Returns the resulting urls and tf-idf, sorted."""
-    # TODO: Queries with multiple terms - remove stop words
     result_all = {}
     result_top = []
-
     for term in query.split():
         if term not in STOP_WORDS:
             term = STEMMER.stem(term)
@@ -89,18 +103,16 @@ def query_db(query):
                 db = json.load(file)
                 if term in db:
                     for url in db[term]:
-                        if url in result_all:
-                            result_all[url] += calc_tf_idf(term, url, db)
-                        else:
-                            result_all[url] = calc_tf_idf(term, url, db)
+                        if url not in result_all:
+                            result_all[url] = 0
+                        result_all[url] += calc_tf_idf(term, url, db) * db[term][url]["tf-idf"]
     if result_all:
         for r in sorted(result_all.items(), key=lambda item: -item[1]):
             result_top.append(r)
             if len(result_top) == 10:
                 return result_top
-        else:
-            return None
-    # return sorted(result.items(), key=lambda item: -item[1])
+    else:
+        return None
 
 
 def print_results(results):
@@ -115,7 +127,6 @@ def print_results(results):
 def dump():
     """Dumps in-memory index to a JSON file."""
     with open("out.json", "w") as out:
-        INDEX["doc_count"] = len(DOCUMENTS)
         json.dump(INDEX, out, indent=4)
 
 
@@ -125,8 +136,11 @@ if __name__ == "__main__":
     # for url_, path in FILE_URL_PAIRS.items():
     #     processed = process_file(path)
     #     create_index(url_, processed)
+    # INDEX["doc_count"] = len(DOCUMENTS)
+    # add_tf_idf()
     # dump()
 
     search = input("Search: ").strip().lower()
+    # calc_cosine_sim(search)
     full_results = query_db(search)
     print_results(full_results)

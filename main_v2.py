@@ -1,6 +1,7 @@
 import json
 import string
 import math
+import _pickle as pickle
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
@@ -16,8 +17,13 @@ FILE_URL_PAIRS = dict()
 INVERTED_INDEX = defaultdict()
 DOC_TERM_COUNT = defaultdict()
 
-INVERTED_INDEX_FILE = "INVERTED_INDEX.JSON"
-DOC_TERM_COUNT_FILE = "DOC_TERM_COUNT.JSON"
+INVERTED_INDEX_JSON = "INVERTED_INDEX.JSON"
+DOC_TERM_COUNT_JSON = "DOC_TERM_COUNT.JSON"
+
+INVERTED_INDEX_PICKLE = "INVERTED_INDEX.pickle"
+DOC_TERM_COUNT_PICKLE = "DOC_TERM_COUNT.pickle"
+
+DEBUG = False
 
 # nltk.download("stopwords")
 STOP_WORDS = set(stopwords.words('english'))
@@ -95,23 +101,32 @@ def query_db(query):
     """Calculates the cosine similarity for query and docs, returns the highest 10"""
     result_all = {}
     result_top = []
-    query = set(query.split())
-    with open(INVERTED_INDEX_FILE, "r") as file, open(DOC_TERM_COUNT_FILE, "r") as file2:
-        inverted_index = json.load(file)
-        doc_term_count = json.load(file2)
-        for term in query:
-            if term not in STOP_WORDS:
-                term = STEMMER.stem(term)
-                if term in inverted_index:
-                    for doc in inverted_index[term]:
-                        if doc not in result_all:
-                            result_all[doc] = 0
-                        result_all[doc] += calc_tf_idf(term, doc, inverted_index, doc_term_count) * inverted_index[term][doc]["tf-idf"]
+    query = set(query.lower().strip().split())
+
+    if DEBUG:
+        with open(INVERTED_INDEX_JSON, "r") as file, open(DOC_TERM_COUNT_JSON, "r") as file2:
+            inverted_index = json.load(file)
+            doc_term_count = json.load(file2)
+    else:
+        with open(INVERTED_INDEX_PICKLE, "rb") as file, open(DOC_TERM_COUNT_PICKLE, "rb") as file2:
+            inverted_index = pickle.load(file)
+            doc_term_count = pickle.load(file2)
+
+    for term in query:
+        if term not in STOP_WORDS:
+            term = STEMMER.stem(term)
+            if term in inverted_index:
+                for doc in inverted_index[term]:
+                    if doc not in result_all:
+                        result_all[doc] = 0
+                    result_all[doc] += \
+                        calc_tf_idf(term, doc, inverted_index, doc_term_count) * inverted_index[term][doc]["tf-idf"]
     if result_all:
         for r in sorted(result_all.items(), key=lambda item: -item[1]):
             result_top.append(r)
             if len(result_top) == 10:
                 return result_top
+        return result_top
     else:
         return None
 
@@ -126,14 +141,23 @@ def print_results(results):
 
 
 def dump():
-    """Dumps in-memory index to a JSON file."""
-    with open(INVERTED_INDEX_FILE, "w") as inverted_index_file, open(DOC_TERM_COUNT_FILE, "w") as doc_term_count_file:
-        json.dump(INVERTED_INDEX, inverted_index_file, indent=4)
-        json.dump(DOC_TERM_COUNT, doc_term_count_file, indent=4)
+    """Dumps in-memory index to a JSON or pickle file."""
+    if DEBUG:
+        with open(INVERTED_INDEX_JSON, "w") as inverted_index_file, open(DOC_TERM_COUNT_JSON, "w") as doc_term_count_file:
+            json.dump(INVERTED_INDEX, inverted_index_file, indent=4)
+            json.dump(DOC_TERM_COUNT, doc_term_count_file, indent=4)
+    else:
+        with open(INVERTED_INDEX_PICKLE, "wb") as inverted_index_file, open(DOC_TERM_COUNT_PICKLE, "wb") as doc_term_count_file:
+            pickle.dump(INVERTED_INDEX, inverted_index_file)
+            pickle.dump(DOC_TERM_COUNT, doc_term_count_file)
 
 
 if __name__ == "__main__":
-    out = Path(INVERTED_INDEX_FILE)
+    if DEBUG:
+        out = Path(INVERTED_INDEX_JSON)
+    else:
+        out = Path(INVERTED_INDEX_PICKLE)
+
     if not out.is_file():
         map_file_doc()
         for doc_, path in FILE_URL_PAIRS.items():

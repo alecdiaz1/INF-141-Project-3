@@ -13,15 +13,18 @@ from pymongo import MongoClient
 BOOK_KEEPING = "WEBPAGES_RAW_TEST/bookkeeping.json"
 FILE_URL_PAIRS = dict()
 
-INDEX = defaultdict()
-DOCUMENTS = set()
+INVERTED_INDEX = defaultdict()
+DOC_TERM_COUNT = defaultdict()
+
+INVERTED_INDEX_FILE = "INVERTED_INDEX.JSON"
+DOC_TERM_COUNT_FILE = "DOC_TERM_COUNT.JSON"
 
 # nltk.download("stopwords")
 STOP_WORDS = set(stopwords.words('english'))
 STEMMER = PorterStemmer()
 
 
-def map_file_url():
+def map_file_doc():
     """Maps file names in bookkeeping.json to file paths."""
     with open(BOOK_KEEPING, encoding="UTF-8") as json_file:
         data = json.load(json_file)
@@ -44,10 +47,10 @@ def process_file(file_path):
     return text
 
 
-def create_index(url, text):
+def create_index(doc, text):
     """Creates inverted index with positional information and adds documents to document set for counting later."""
     # TODO: Break each word into high and low lists
-    # TODO: OR sort by urls in each word by tf-idf
+    # TODO: OR sort by docs in each word by tf-idf
     # TODO: Figure out better heuristic, possibly by analyzing HTML tags
 
     term_count = 0
@@ -55,54 +58,55 @@ def create_index(url, text):
         term_count += 1
         if word not in STOP_WORDS:
             word = STEMMER.stem(word)
-            if word not in INDEX:
-                INDEX[word] = {url: {"locations": [index]}}
+            if word not in INVERTED_INDEX:
+                INVERTED_INDEX[word] = {doc: {"locations": [index]}}
             else:
-                if url in INDEX[word]:
-                    INDEX[word][url]["locations"].append(index)
+                if doc in INVERTED_INDEX[word]:
+                    INVERTED_INDEX[word][doc]["locations"].append(index)
                 else:
-                    INDEX[word][url] = {"locations": [index]}
-            INDEX[word][url]["term_count"] = term_count
-    DOCUMENTS.add(url)
+                    INVERTED_INDEX[word][doc] = {"locations": [index]}
+    if doc not in DOC_TERM_COUNT:
+        DOC_TERM_COUNT[doc] = term_count
 
 
 def add_tf_idf():
-    for term in INDEX:
+    for term in INVERTED_INDEX:
         try:
-            for url in INDEX[term]:
-                INDEX[term][url]["tf-idf"] = calc_tf_idf(term, url, INDEX)
+            for doc in INVERTED_INDEX[term]:
+                INVERTED_INDEX[term][doc]["tf-idf"] = calc_tf_idf(term, doc, INVERTED_INDEX, DOC_TERM_COUNT)
         except TypeError:
             pass
 
 
-def calc_tf(term, url, db):
-    return len(db[term][url]) / db[term][url]["term_count"]
+def calc_tf(term, doc, inverted_index, doc_term_count):
+    return len(inverted_index[term][doc]) / doc_term_count[doc]
 
 
-def calc_idf(term, db):
-    return math.log((db["doc_count"] / len(db[term])))
+def calc_idf(term, inverted_index):
+    return math.log((inverted_index["doc_count"] / len(inverted_index[term])))
 
 
-def calc_tf_idf(term, url, db):
-    """Calculate the tf-idf for a term and url pair."""
-    return calc_tf(term, url, db) * calc_idf(term, db)
+def calc_tf_idf(term, doc, inverted_index, doc_term_count):
+    """Calculate the tf-idf for a term and doc pair."""
+    return calc_tf(term, doc, inverted_index, doc_term_count) * calc_idf(term, inverted_index)
 
 
 def query_db(query):
-    """Calculates the cosine similarity for query and urls, returns the highest 10"""
+    """Calculates the cosine similarity for query and docs, returns the highest 10"""
     result_all = {}
     result_top = []
     query = set(query.split())
-    for term in query:
-        if term not in STOP_WORDS:
-            term = STEMMER.stem(term)
-            with open("out.json", "r") as file:
-                db = json.load(file)
-                if term in db:
-                    for url in db[term]:
-                        if url not in result_all:
-                            result_all[url] = 0
-                        result_all[url] += calc_tf_idf(term, url, db) * db[term][url]["tf-idf"]
+    with open(INVERTED_INDEX_FILE, "r") as file, open(DOC_TERM_COUNT_FILE, "r") as file2:
+        inverted_index = json.load(file)
+        doc_term_count = json.load(file2)
+        for term in query:
+            if term not in STOP_WORDS:
+                term = STEMMER.stem(term)
+                if term in inverted_index:
+                    for doc in inverted_index[term]:
+                        if doc not in result_all:
+                            result_all[doc] = 0
+                        result_all[doc] += calc_tf_idf(term, doc, inverted_index, doc_term_count) * inverted_index[term][doc]["tf-idf"]
     if result_all:
         for r in sorted(result_all.items(), key=lambda item: -item[1]):
             result_top.append(r)
@@ -123,18 +127,19 @@ def print_results(results):
 
 def dump():
     """Dumps in-memory index to a JSON file."""
-    with open("out.json", "w") as out:
-        json.dump(INDEX, out, indent=4)
+    with open(INVERTED_INDEX_FILE, "w") as inverted_index_file, open(DOC_TERM_COUNT_FILE, "w") as doc_term_count_file:
+        json.dump(INVERTED_INDEX, inverted_index_file, indent=4)
+        json.dump(DOC_TERM_COUNT, doc_term_count_file, indent=4)
 
 
 if __name__ == "__main__":
-    out = Path("out.json")
+    out = Path(INVERTED_INDEX_FILE)
     if not out.is_file():
-        map_file_url()
-        for url_, path in FILE_URL_PAIRS.items():
+        map_file_doc()
+        for doc_, path in FILE_URL_PAIRS.items():
             processed = process_file(path)
-            create_index(url_, processed)
-        INDEX["doc_count"] = len(DOCUMENTS)
+            create_index(doc_, processed)
+        INVERTED_INDEX["doc_count"] = len(DOC_TERM_COUNT)
         add_tf_idf()
         dump()
 

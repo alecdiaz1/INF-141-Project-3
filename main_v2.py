@@ -1,6 +1,8 @@
 import json
 import string
 import math
+import nltk
+from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
 from nltk import word_tokenize
@@ -15,7 +17,9 @@ FILE_URL_PAIRS = dict()
 INDEX = defaultdict()
 DOCUMENTS = set()
 
+# nltk.download("stopwords")
 STOP_WORDS = set(stopwords.words('english'))
+STEMMER = PorterStemmer()
 
 
 def map_file_url():
@@ -48,14 +52,16 @@ def create_index(url, text):
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1
-        if word not in STOP_WORDS and word not in INDEX:
-            INDEX[word] = {url: {"locations": [index]}}
-        else:
-            if url in INDEX[word]:
-                INDEX[word][url]["locations"].append(index)
+        if word not in STOP_WORDS:
+            word = STEMMER.stem(word)
+            if word not in INDEX:
+                INDEX[word] = {url: {"locations": [index]}}
             else:
-                INDEX[word][url] = {"locations": [index]}
-        INDEX[word][url]["term_count"] = term_count
+                if url in INDEX[word]:
+                    INDEX[word][url]["locations"].append(index)
+                else:
+                    INDEX[word][url] = {"locations": [index]}
+            INDEX[word][url]["term_count"] = term_count
     DOCUMENTS.add(url)
 
 
@@ -67,16 +73,43 @@ def calc_tf_idf(term, url, db):
     return tf * idf
 
 
-def query_db(term):
+# def calc_tf_idf_query(term, db):
+    # tf =
+
+def query_db(query):
     """Calculates the tf-idf for every url the term occurs in. Returns the resulting urls and tf-idf, sorted."""
-    result = {}
-    with open("out.json", "r") as file:
-        db = json.load(file)
-        for url in db[term]:
-            result[url] = calc_tf_idf(term, url, db)
-    for r in sorted(result.items(), key=lambda item: -item[1]):
-        print(r)
+    # TODO: Queries with multiple terms - remove stop words
+    result_all = {}
+    result_top = []
+
+    for term in query.split():
+        if term not in STOP_WORDS:
+            term = STEMMER.stem(term)
+            with open("out.json", "r") as file:
+                db = json.load(file)
+                if term in db:
+                    for url in db[term]:
+                        if url in result_all:
+                            result_all[url] += calc_tf_idf(term, url, db)
+                        else:
+                            result_all[url] = calc_tf_idf(term, url, db)
+    if result_all:
+        for r in sorted(result_all.items(), key=lambda item: -item[1]):
+            result_top.append(r)
+            if len(result_top) == 10:
+                return result_top
+        else:
+            return None
     # return sorted(result.items(), key=lambda item: -item[1])
+
+
+def print_results(results):
+    """Prints results, if there any. Otherwise prints no results found"""
+    if results:
+        for r in results:
+            print(r)
+    else:
+        print("No results found")
 
 
 def dump():
@@ -87,13 +120,13 @@ def dump():
 
 
 if __name__ == "__main__":
-    map_file_url()
-    query = input("Search: ").strip().lower()
-    query_db(query)
-
     # ----- RUN THIS ONLY IF YOU HAVE NO OUT.JSON FILE, COMMENT OUT AFTER -----
+    # map_file_url()
     # for url_, path in FILE_URL_PAIRS.items():
     #     processed = process_file(path)
     #     create_index(url_, processed)
     # dump()
 
+    search = input("Search: ").strip().lower()
+    full_results = query_db(search)
+    print_results(full_results)

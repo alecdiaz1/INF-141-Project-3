@@ -1,7 +1,11 @@
+import io
 import json
 import string
 import math
 import _pickle as pickle
+import cProfile
+import pstats
+
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
@@ -9,19 +13,23 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 
 from bs4 import BeautifulSoup
-from pymongo import MongoClient
 
 BOOK_KEEPING = "WEBPAGES_RAW_TEST/bookkeeping.json"
 FILE_URL_PAIRS = dict()
 
 INVERTED_INDEX = defaultdict()
 DOC_TERM_COUNT = defaultdict()
+STEM_CACHE = dict()
 
 INVERTED_INDEX_JSON = "INVERTED_INDEX.JSON"
 DOC_TERM_COUNT_JSON = "DOC_TERM_COUNT.JSON"
 
 INVERTED_INDEX_PICKLE = "INVERTED_INDEX.pickle"
 DOC_TERM_COUNT_PICKLE = "DOC_TERM_COUNT.pickle"
+
+pr = cProfile.Profile()
+DUMP_FILE = "DUMP.txt"
+PROFILE_FILE = "PROFILE.txt"
 
 DEBUG = False
 
@@ -58,24 +66,30 @@ def create_index(doc, text):
     # TODO: Break each word into high and low lists
     # TODO: OR sort by docs in each word by tf-idf
     # TODO: Figure out better heuristic, possibly by analyzing HTML tags
-
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1
         if word not in STOP_WORDS:
-            word = STEMMER.stem(word)
-            if word not in INVERTED_INDEX:
-                INVERTED_INDEX[word] = {doc: {"locations": [index]}}
+            # Cut down on stemming
+            if word not in STEM_CACHE:
+                stemmed = STEMMER.stem(word)   # Bottleneck
+                STEM_CACHE[word] = stemmed
             else:
-                if doc in INVERTED_INDEX[word]:
-                    INVERTED_INDEX[word][doc]["locations"].append(index)
+                stemmed = STEM_CACHE[word]
+
+            if stemmed not in INVERTED_INDEX:
+                INVERTED_INDEX[stemmed] = {doc: {"locations": [index]}}
+            else:
+                if doc in INVERTED_INDEX[stemmed]:
+                    INVERTED_INDEX[stemmed][doc]["locations"].append(index)
                 else:
-                    INVERTED_INDEX[word][doc] = {"locations": [index]}
+                    INVERTED_INDEX[stemmed][doc] = {"locations": [index]}
     if doc not in DOC_TERM_COUNT:
         DOC_TERM_COUNT[doc] = term_count
 
 
 def add_tf_idf():
+    """Adds tf-idf to each word:url pair"""
     for term in INVERTED_INDEX:
         try:
             for doc in INVERTED_INDEX[term]:
@@ -143,11 +157,13 @@ def print_results(results):
 def dump():
     """Dumps in-memory index to a JSON or pickle file."""
     if DEBUG:
-        with open(INVERTED_INDEX_JSON, "w") as inverted_index_file, open(DOC_TERM_COUNT_JSON, "w") as doc_term_count_file:
+        with open(INVERTED_INDEX_JSON, "w") as inverted_index_file, \
+                open(DOC_TERM_COUNT_JSON, "w") as doc_term_count_file:
             json.dump(INVERTED_INDEX, inverted_index_file, indent=4)
             json.dump(DOC_TERM_COUNT, doc_term_count_file, indent=4)
     else:
-        with open(INVERTED_INDEX_PICKLE, "wb") as inverted_index_file, open(DOC_TERM_COUNT_PICKLE, "wb") as doc_term_count_file:
+        with open(INVERTED_INDEX_PICKLE, "wb") as inverted_index_file, \
+                open(DOC_TERM_COUNT_PICKLE, "wb") as doc_term_count_file:
             pickle.dump(INVERTED_INDEX, inverted_index_file)
             pickle.dump(DOC_TERM_COUNT, doc_term_count_file)
 
@@ -158,6 +174,8 @@ if __name__ == "__main__":
     else:
         out = Path(INVERTED_INDEX_PICKLE)
 
+    pr.enable()
+
     if not out.is_file():
         map_file_doc()
         for doc_, path in FILE_URL_PAIRS.items():
@@ -167,6 +185,18 @@ if __name__ == "__main__":
         add_tf_idf()
         dump()
 
+    pr.disable()
+
     search = input("Search: ").strip().lower()
+
     full_results = query_db(search)
     print_results(full_results)
+
+    # For dumping profile to a file
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
+    ps.dump_stats(DUMP_FILE)
+
+    out_stream = open(PROFILE_FILE, 'w')
+    ps = pstats.Stats(DUMP_FILE, stream=out_stream)
+    ps.strip_dirs().sort_stats('cumulative').print_stats()

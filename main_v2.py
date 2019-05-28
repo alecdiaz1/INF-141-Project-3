@@ -1,16 +1,11 @@
 import json
 import string
 import math
-import nltk
-import re
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
 from nltk import word_tokenize
 from nltk.corpus import stopwords
-from collections import Counter
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
@@ -53,6 +48,8 @@ def create_index(url, text):
     """Creates inverted index with positional information and adds documents to document set for counting later."""
     # TODO: Break each word into high and low lists
     # TODO: OR sort by urls in each word by tf-idf
+    # TODO: Figure out better heuristic, possibly by analyzing HTML tags
+
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1
@@ -88,7 +85,6 @@ def calc_idf(term, db):
 
 def calc_tf_idf(term, url, db):
     """Calculate the tf-idf for a term and url pair."""
-    # TODO: Figure out better heuristic, possibly by analyzing HTML tags
     return calc_tf(term, url, db) * calc_idf(term, db)
 
 
@@ -132,16 +128,16 @@ def dump():
 
 
 if __name__ == "__main__":
-    # ----- RUN THIS ONLY IF YOU HAVE NO OUT.JSON FILE, COMMENT OUT AFTER -----
-    # map_file_url()
-    # for url_, path in FILE_URL_PAIRS.items():
-    #     processed = process_file(path)
-    #     create_index(url_, processed)
-    # INDEX["doc_count"] = len(DOCUMENTS)
-    # add_tf_idf()
-    # dump()
+    out = Path("out.json")
+    if not out.is_file():
+        map_file_url()
+        for url_, path in FILE_URL_PAIRS.items():
+            processed = process_file(path)
+            create_index(url_, processed)
+        INDEX["doc_count"] = len(DOCUMENTS)
+        add_tf_idf()
+        dump()
 
     search = input("Search: ").strip().lower()
-    # calc_cosine_sim(search)
     full_results = query_db(search)
     print_results(full_results)

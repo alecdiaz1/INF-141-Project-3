@@ -51,8 +51,8 @@ def process_file(file_path):
 
 def create_index(url, text):
     """Creates inverted index with positional information and adds documents to document set for counting later."""
-    # TODO: Make this function store all this information in a database instead of dumping to a JSON
-    # TODO: Store url: term_count in a different table? So we don't have a copy for every word this url contains
+    # TODO: Break each word into high and low lists
+    # TODO: OR sort by urls in each word by tf-idf
     term_count = 0
     for index, word in enumerate(word_tokenize(text)):
         term_count += 1
@@ -93,10 +93,11 @@ def calc_tf_idf(term, url, db):
 
 
 def query_db(query):
-    """Calculates the tf-idf for every url the term occurs in. Returns the resulting urls and tf-idf, sorted."""
+    """Calculates the cosine similarity for query and urls, returns the highest 10"""
     result_all = {}
     result_top = []
-    for term in query.split():
+    query = set(query.split())
+    for term in query:
         if term not in STOP_WORDS:
             term = STEMMER.stem(term)
             with open("out.json", "r") as file:

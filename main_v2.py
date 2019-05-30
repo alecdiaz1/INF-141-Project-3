@@ -127,6 +127,37 @@ def calc_query_term_proximity(list_1, list_2):
     return min_dist
 
 
+def calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query):
+    doc_score = 0
+
+    # Give docs with more of the query terms more points
+    doc_score += len(result_all[doc])
+
+    # TF-IDF
+    for t in word_set:
+        doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
+
+    # Query-Term Proximity
+    # Subtract query term proximity from score, so farther apart = lower score
+    combos = combinations(word_set, 2)
+    combo_len = 0
+    doc_avg_qtp = 0
+    for c in combos:
+        combo_len += 1
+        doc_avg_qtp += calc_query_term_proximity(inverted_index[c[0]][doc]["locations"],
+                                                 inverted_index[c[1]][doc]["locations"])
+
+    # If the query is more than one word, subtract the avg query term proximity from the score
+    if combo_len > 0:
+        doc_avg_qtp += (doc_avg_qtp / combo_len)/10
+    else:
+        # Otherwise, the more terms the doc is missing, subtract more from its score
+        doc_avg_qtp += len(query) - len(word_set)
+    doc_score -= doc_avg_qtp
+
+    return doc_score
+
+
 def query_db(query):
     """Return the 10 best matching (if available) docs """
     result_all = dict()
@@ -152,45 +183,18 @@ def query_db(query):
                         result_all[url] = set()
                     result_all[url].add(word)
 
+    # Test queries
     # software engineer piano biology major tree
     # 01653 9173 9174
 
     # Start with the urls that contain the most words, stop once we have 10 results
-    if result_all:
-        for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
-            doc_score = 0
+    for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
+        result_top.append((doc, calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query)))
 
-            # Give docs with more of the query terms more points
-            doc_score += len(result_all[doc])
-
-            # TF-IDF
-            for t in word_set:
-                doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
-
-            # Query-Term Proximity
-            # Subtract query term proximity from score, so farther apart = lower score
-            combos = combinations(word_set, 2)
-            combo_len = 0
-            doc_avg_qtp = 0
-            for c in combos:
-                combo_len += 1
-                doc_avg_qtp += calc_query_term_proximity(inverted_index[c[0]][doc]["locations"],
-                                                         inverted_index[c[1]][doc]["locations"])
-
-            # If the query is more than one word, subtract the avg query term proximity from the score
-            if combo_len > 0:
-                doc_avg_qtp += (doc_avg_qtp / combo_len)/10
-            else:
-                # Otherwise, the more terms the doc is missing, subtract more from its score
-                doc_avg_qtp += len(query) - len(word_set)
-            doc_score -= doc_avg_qtp
-
-            result_top.append((doc, doc_score))
-
-            # Stop after we get 10 results
-            if len(result_top) > 9:
-                break
-
+    # Stop after we get 10 results, or after we go through all docs
+    if len(result_top):
+        if len(result_top) > 9:
+            return sorted(result_top, key=lambda x: -x[1])
         return sorted(result_top, key=lambda x: -x[1])
     else:
         return None

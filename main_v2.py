@@ -6,6 +6,8 @@ import _pickle as pickle
 import cProfile
 import pstats
 
+from itertools import islice, zip_longest
+from itertools import combinations, starmap
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
@@ -111,9 +113,54 @@ def calc_tf_idf(term, doc, inverted_index, doc_term_count):
     return calc_tf(term, doc, inverted_index, doc_term_count) * calc_idf(term, inverted_index)
 
 
+def calc_query_term_proximity(list_1, list_2):
+    """Given the indices of two words, finds the minimum distance between them"""
+    min_dist = 10000000
+    if len(list_1) <= len(list_2):
+        shortest = list_1
+    else:
+        shortest = list_2
+    for v1, v2 in zip_longest(list_1, list_2, fillvalue=shortest[-1]):
+        dist = abs(v2 - v1)
+        if dist < min_dist:
+            min_dist = dist
+    return min_dist
+
+
+def calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query):
+    doc_score = 0
+
+    # Give docs with more of the query terms more points
+    doc_score += len(result_all[doc])
+
+    # TF-IDF
+    for t in word_set:
+        doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
+
+    # Query-Term Proximity
+    # Subtract query term proximity from score, so farther apart = lower score
+    combos = combinations(word_set, 2)
+    combo_len = 0
+    doc_avg_qtp = 0
+    for c in combos:
+        combo_len += 1
+        doc_avg_qtp += calc_query_term_proximity(inverted_index[c[0]][doc]["locations"],
+                                                 inverted_index[c[1]][doc]["locations"])
+
+    # If the query is more than one word, subtract the avg query term proximity from the score
+    if combo_len > 0:
+        doc_avg_qtp += (doc_avg_qtp / combo_len)/10
+    else:
+        # Otherwise, the more terms the doc is missing, subtract more from its score
+        doc_avg_qtp += len(query) - len(word_set)
+    doc_score -= doc_avg_qtp
+
+    return doc_score
+
+
 def query_db(query):
-    """Calculates the cosine similarity for query and docs, returns the highest 10"""
-    result_all = {}
+    """Return the 10 best matching (if available) docs """
+    result_all = dict()
     result_top = []
     query = set(query.lower().strip().split())
 
@@ -126,21 +173,29 @@ def query_db(query):
             inverted_index = pickle.load(file)
             doc_term_count = pickle.load(file2)
 
-    for term in query:
-        if term not in STOP_WORDS:
-            term = STEMMER.stem(term)
-            if term in inverted_index:
-                for doc in inverted_index[term]:
-                    if doc not in result_all:
-                        result_all[doc] = 0
-                    result_all[doc] += \
-                        calc_tf_idf(term, doc, inverted_index, doc_term_count) * inverted_index[term][doc]["tf-idf"]
-    if result_all:
-        for r in sorted(result_all.items(), key=lambda item: -item[1]):
-            result_top.append(r)
-            if len(result_top) == 10:
-                return result_top
-        return result_top
+    # For each url, make a set of the query words it contains
+    for word in query:
+        if word not in STOP_WORDS:
+            word = STEMMER.stem(word)
+            if word in inverted_index:
+                for url in inverted_index[word]:
+                    if url not in result_all:
+                        result_all[url] = set()
+                    result_all[url].add(word)
+
+    # Test queries
+    # software engineer piano biology major tree
+    # 01653 9173 9174
+
+    # Start with the urls that contain the most words, stop once we have 10 results
+    for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
+        result_top.append((doc, calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query)))
+
+    # Stop after we get 10 results, or after we go through all docs
+    if len(result_top):
+        if len(result_top) > 9:
+            return sorted(result_top, key=lambda x: -x[1])
+        return sorted(result_top, key=lambda x: -x[1])
     else:
         return None
 
@@ -174,8 +229,6 @@ if __name__ == "__main__":
     else:
         out = Path(INVERTED_INDEX_PICKLE)
 
-    pr.enable()
-
     if not out.is_file():
         map_file_doc()
         for doc_, path in FILE_URL_PAIRS.items():
@@ -185,12 +238,14 @@ if __name__ == "__main__":
         add_tf_idf()
         dump()
 
-    pr.disable()
-
     search = input("Search: ").strip().lower()
+
+    pr.enable()
 
     full_results = query_db(search)
     print_results(full_results)
+
+    pr.disable()
 
     # For dumping profile to a file
     s = io.StringIO()

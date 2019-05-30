@@ -6,6 +6,8 @@ import _pickle as pickle
 import cProfile
 import pstats
 
+from itertools import islice
+from itertools import combinations, starmap
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
 from pathlib import Path
@@ -111,6 +113,16 @@ def calc_tf_idf(term, doc, inverted_index, doc_term_count):
     return calc_tf(term, doc, inverted_index, doc_term_count) * calc_idf(term, inverted_index)
 
 
+def calc_query_term_proximity(list_1, list_2):
+    min_dist = 1000000
+    for v1, v2 in zip(list_1, list_2):
+        dist = abs(v2 - v1)
+        if dist < min_dist:
+            min_dist = dist
+    print(min_dist)
+    return min_dist
+
+
 def query_db(query):
     """Calculates the cosine similarity for query and docs, returns the highest 10"""
     result_all = {}
@@ -126,15 +138,46 @@ def query_db(query):
             inverted_index = pickle.load(file)
             doc_term_count = pickle.load(file2)
 
-    for term in query:
-        if term not in STOP_WORDS:
-            term = STEMMER.stem(term)
-            if term in inverted_index:
-                for doc in inverted_index[term]:
-                    if doc not in result_all:
-                        result_all[doc] = 0
-                    result_all[doc] += \
-                        calc_tf_idf(term, doc, inverted_index, doc_term_count) * inverted_index[term][doc]["tf-idf"]
+    word_url_sets = []
+    relevant_docs = defaultdict()
+
+    # For each word in query, make a set of the urls the word is in
+    for word in query:
+        if word not in STOP_WORDS:
+            word = STEMMER.stem(word)
+            url_set = set()
+            if word in inverted_index:
+                for url in inverted_index[word]:
+                    url_set.add(url)
+                word_url_sets.append(url_set)
+
+    # Make a dict of how many query words in doc: doc
+    if word_url_sets:
+        i = 0
+        # software engineering piano biology tree major
+        while len(relevant_docs) < 10 and i < len(word_url_sets):
+            queries_in_doc = len(word_url_sets) - i
+            relevant_docs[queries_in_doc] = set()
+            all_intersections = starmap(set.intersection, combinations(word_url_sets, queries_in_doc))
+            for intersection in all_intersections:
+                for doc in intersection:
+                    # if len(relevant_docs) < 10:
+                    relevant_docs[queries_in_doc].add(doc)
+            i += 1
+
+    for k, v in relevant_docs.items():
+        print(k, v)
+
+    # if word_url_sets:
+    #     i = 0
+    #     while i < len(word_url_sets):
+    #         # https://stackoverflow.com/questions/17495257/get-intersection-of-list-of-sets
+    #         for u in set.intersection(word_url_sets[0], *islice(word_url_sets, len(word_url_sets) - 1, None)):
+    #             relevant_docs.add(u)
+    #         i += 1
+
+    # print(len(in_all))
+
     if result_all:
         for r in sorted(result_all.items(), key=lambda item: -item[1]):
             result_top.append(r)

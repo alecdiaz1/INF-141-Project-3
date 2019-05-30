@@ -1,20 +1,19 @@
-import io
-import json
-import string
-import math
 import _pickle as pickle
 import cProfile
+import io
+import json
+import math
 import pstats
-
-from itertools import islice, zip_longest
-from itertools import combinations, starmap
-from nltk.stem.porter import PorterStemmer
+import string
 from collections import defaultdict
+from itertools import combinations
+from itertools import zip_longest
 from pathlib import Path
-from nltk import word_tokenize
-from nltk.corpus import stopwords
 
 from bs4 import BeautifulSoup
+from nltk import word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
 
 BOOK_KEEPING = "WEBPAGES_RAW_TEST/bookkeeping.json"
 FILE_URL_PAIRS = dict()
@@ -189,12 +188,12 @@ def query_db(query):
 
     # Start with the urls that contain the most words, stop once we have 10 results
     for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
+        if len(result_top) > 9:
+            return sorted(result_top, key=lambda x: -x[1])
         result_top.append((doc, calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query)))
 
     # Stop after we get 10 results, or after we go through all docs
     if len(result_top):
-        if len(result_top) > 9:
-            return sorted(result_top, key=lambda x: -x[1])
         return sorted(result_top, key=lambda x: -x[1])
     else:
         return None

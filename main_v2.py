@@ -6,7 +6,7 @@ import _pickle as pickle
 import cProfile
 import pstats
 
-from itertools import islice
+from itertools import islice, zip_longest
 from itertools import combinations, starmap
 from nltk.stem.porter import PorterStemmer
 from collections import defaultdict
@@ -115,11 +115,14 @@ def calc_tf_idf(term, doc, inverted_index, doc_term_count):
 
 def calc_query_term_proximity(list_1, list_2):
     min_dist = 1000000
-    for v1, v2 in zip(list_1, list_2):
+    if len(list_1) <= len(list_2):
+        shortest = list_1
+    else:
+        shortest = list_2
+    for v1, v2 in zip_longest(list_1, list_2, fillvalue=shortest[-1]):
         dist = abs(v2 - v1)
         if dist < min_dist:
             min_dist = dist
-    print(min_dist)
     return min_dist
 
 
@@ -147,18 +150,29 @@ def query_db(query):
                     if url not in result_all:
                         result_all[url] = set()
                     result_all[url].add(word)
-
-    # Start with the urls that contain the most words
-
+        
+    # software engineer piano biology major tree
+    # 01653 9173 9174
+    # Start with the urls that contain the most words, stop once we have 10 results
     if result_all:
-        for doc, terms in sorted(result_all.items(), key=lambda x: len(x[1])):
+        for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
             doc_score = 0
-            doc_score += math.log(len(result_all[doc]))
-            for t in terms:
+            # doc_score += math.log(len(result_all[doc]))/100
+            for t in word_set:
                 doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
-            result_top.append((doc, doc_score))
 
-        return sorted(result_top, key=lambda x: x[1])
+            combos = combinations(word_set, 2)
+            doc_avg_qtp = 0
+            for c in combos:
+                doc_avg_qtp += calc_query_term_proximity(inverted_index[c[0]][doc]["locations"],
+                                                         inverted_index[c[1]][doc]["locations"])
+            doc_avg_qtp = (doc_avg_qtp / len(word_set)) / 1000
+            doc_score -= doc_avg_qtp
+            result_top.append((doc, doc_score))
+            if len(result_top) > 9:
+                break
+
+        return sorted(result_top, key=lambda x: -x[1])
     else:
         return None
 
@@ -192,7 +206,6 @@ if __name__ == "__main__":
     else:
         out = Path(INVERTED_INDEX_PICKLE)
 
-    pr.enable()
 
     if not out.is_file():
         map_file_doc()
@@ -203,12 +216,14 @@ if __name__ == "__main__":
         add_tf_idf()
         dump()
 
-    pr.disable()
-
     search = input("Search: ").strip().lower()
+
+    pr.enable()
 
     full_results = query_db(search)
     print_results(full_results)
+
+    pr.disable()
 
     # For dumping profile to a file
     s = io.StringIO()

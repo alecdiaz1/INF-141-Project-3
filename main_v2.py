@@ -125,7 +125,7 @@ def calc_query_term_proximity(list_1, list_2):
 
 def query_db(query):
     """Calculates the cosine similarity for query and docs, returns the highest 10"""
-    result_all = {}
+    result_all = dict()
     result_top = []
     query = set(query.lower().strip().split())
 
@@ -138,45 +138,39 @@ def query_db(query):
             inverted_index = pickle.load(file)
             doc_term_count = pickle.load(file2)
 
-    word_url_sets = []
-    relevant_docs = defaultdict()
-
-    # For each word in query, make a set of the urls the word is in
+    # For each url, make a set of the query words it contains
     for word in query:
         if word not in STOP_WORDS:
             word = STEMMER.stem(word)
-            url_set = set()
             if word in inverted_index:
                 for url in inverted_index[word]:
-                    url_set.add(url)
-                word_url_sets.append(url_set)
+                    if url not in result_all:
+                        result_all[url] = set()
+                    result_all[url].add(word)
 
-    # Make a dict of how many query words in doc: doc
-    if word_url_sets:
-        i = 0
-        # software engineering piano biology tree major
-        while len(relevant_docs) < 10 and i < len(word_url_sets):
-            queries_in_doc = len(word_url_sets) - i
-            relevant_docs[queries_in_doc] = set()
-            all_intersections = starmap(set.intersection, combinations(word_url_sets, queries_in_doc))
-            for intersection in all_intersections:
-                for doc in intersection:
-                    # if len(relevant_docs) < 10:
-                    relevant_docs[queries_in_doc].add(doc)
-            i += 1
+    # for doc in result_all:
+    #     for word in result_all[doc]:
 
-    for k, v in relevant_docs.items():
+
+    for k, v in sorted(result_all.items(), key=lambda x: len(x[1]), reverse=True):
         print(k, v)
 
+    # Make a dict of how many query words in doc: doc
     # if word_url_sets:
     #     i = 0
-    #     while i < len(word_url_sets):
-    #         # https://stackoverflow.com/questions/17495257/get-intersection-of-list-of-sets
-    #         for u in set.intersection(word_url_sets[0], *islice(word_url_sets, len(word_url_sets) - 1, None)):
-    #             relevant_docs.add(u)
+    #     # software engineering piano biology tree major
+    #     while len(relevant_docs) < 10 and i < len(word_url_sets):
+    #         queries_in_doc = len(word_url_sets) - i
+    #         relevant_docs[queries_in_doc] = set()
+    #         all_intersections = starmap(set.intersection, combinations(word_url_sets, queries_in_doc))
+    #         for intersection in all_intersections:
+    #             for doc in intersection:
+    #                 # if len(relevant_docs) < 10:
+    #                 relevant_docs[queries_in_doc].add(doc)
     #         i += 1
 
-    # print(len(in_all))
+    # for k, v in relevant_docs.items():
+    #     print(k, v)
 
     if result_all:
         for r in sorted(result_all.items(), key=lambda item: -item[1]):

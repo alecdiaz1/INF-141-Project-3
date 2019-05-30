@@ -114,7 +114,8 @@ def calc_tf_idf(term, doc, inverted_index, doc_term_count):
 
 
 def calc_query_term_proximity(list_1, list_2):
-    min_dist = 1000000
+    """Given the indices of two words, finds the minimum distance between them"""
+    min_dist = 10000000
     if len(list_1) <= len(list_2):
         shortest = list_1
     else:
@@ -127,7 +128,7 @@ def calc_query_term_proximity(list_1, list_2):
 
 
 def query_db(query):
-    """Calculates the cosine similarity for query and docs, returns the highest 10"""
+    """Return the 10 best matching (if available) docs """
     result_all = dict()
     result_top = []
     query = set(query.lower().strip().split())
@@ -150,25 +151,43 @@ def query_db(query):
                     if url not in result_all:
                         result_all[url] = set()
                     result_all[url].add(word)
-        
+
     # software engineer piano biology major tree
     # 01653 9173 9174
+
     # Start with the urls that contain the most words, stop once we have 10 results
     if result_all:
         for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
             doc_score = 0
-            # doc_score += math.log(len(result_all[doc]))/100
+
+            # Give docs with more of the query terms more points
+            doc_score += len(result_all[doc])
+
+            # TF-IDF
             for t in word_set:
                 doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
 
+            # Query-Term Proximity
+            # Subtract query term proximity from score, so farther apart = lower score
             combos = combinations(word_set, 2)
+            combo_len = 0
             doc_avg_qtp = 0
             for c in combos:
+                combo_len += 1
                 doc_avg_qtp += calc_query_term_proximity(inverted_index[c[0]][doc]["locations"],
                                                          inverted_index[c[1]][doc]["locations"])
-            doc_avg_qtp = (doc_avg_qtp / len(word_set)) / 1000
+
+            # If the query is more than one word, subtract the avg query term proximity from the score
+            if combo_len > 0:
+                doc_avg_qtp += (doc_avg_qtp / combo_len)/10
+            else:
+                # Otherwise, the more terms the doc is missing, subtract more from its score
+                doc_avg_qtp += len(query) - len(word_set)
             doc_score -= doc_avg_qtp
+
             result_top.append((doc, doc_score))
+
+            # Stop after we get 10 results
             if len(result_top) > 9:
                 break
 
@@ -205,7 +224,6 @@ if __name__ == "__main__":
         out = Path(INVERTED_INDEX_JSON)
     else:
         out = Path(INVERTED_INDEX_PICKLE)
-
 
     if not out.is_file():
         map_file_doc()

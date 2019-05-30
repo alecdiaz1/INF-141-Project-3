@@ -148,36 +148,17 @@ def query_db(query):
                         result_all[url] = set()
                     result_all[url].add(word)
 
-    # for doc in result_all:
-    #     for word in result_all[doc]:
-
-
-    for k, v in sorted(result_all.items(), key=lambda x: len(x[1]), reverse=True):
-        print(k, v)
-
-    # Make a dict of how many query words in doc: doc
-    # if word_url_sets:
-    #     i = 0
-    #     # software engineering piano biology tree major
-    #     while len(relevant_docs) < 10 and i < len(word_url_sets):
-    #         queries_in_doc = len(word_url_sets) - i
-    #         relevant_docs[queries_in_doc] = set()
-    #         all_intersections = starmap(set.intersection, combinations(word_url_sets, queries_in_doc))
-    #         for intersection in all_intersections:
-    #             for doc in intersection:
-    #                 # if len(relevant_docs) < 10:
-    #                 relevant_docs[queries_in_doc].add(doc)
-    #         i += 1
-
-    # for k, v in relevant_docs.items():
-    #     print(k, v)
+    # Start with the urls that contain the most words
 
     if result_all:
-        for r in sorted(result_all.items(), key=lambda item: -item[1]):
-            result_top.append(r)
-            if len(result_top) == 10:
-                return result_top
-        return result_top
+        for doc, terms in sorted(result_all.items(), key=lambda x: len(x[1])):
+            doc_score = 0
+            doc_score += math.log(len(result_all[doc]))
+            for t in terms:
+                doc_score += calc_tf_idf(t, doc, inverted_index, doc_term_count)
+            result_top.append((doc, doc_score))
+
+        return sorted(result_top, key=lambda x: x[1])
     else:
         return None
 

@@ -15,7 +15,7 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 
-BOOK_KEEPING = "WEBPAGES_RAW_TEST/bookkeeping.json"
+BOOK_KEEPING = "WEBPAGES_RAW/bookkeeping.json"
 FILE_URL_PAIRS = dict()
 
 INVERTED_INDEX = defaultdict()
@@ -171,6 +171,7 @@ def query_db(query):
         with open(INVERTED_INDEX_PICKLE, "rb") as file, open(DOC_TERM_COUNT_PICKLE, "rb") as file2:
             inverted_index = pickle.load(file)
             doc_term_count = pickle.load(file2)
+    print("loaded", len(inverted_index), len(doc_term_count))
 
     # For each url, make a set of the query words it contains
     for word in query:
@@ -231,6 +232,7 @@ if __name__ == "__main__":
     if not out.is_file():
         map_file_doc()
         for doc_, path in FILE_URL_PAIRS.items():
+            print(path)
             processed = process_file(path)
             create_index(doc_, processed)
         INVERTED_INDEX["doc_count"] = len(DOC_TERM_COUNT)

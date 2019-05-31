@@ -157,28 +157,20 @@ def calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, qu
     return doc_score
 
 
-def query_db(query):
+def query_db(query, inv_idx, doc_term_count_file):
     """Return the 10 best matching (if available) docs """
     result_all = dict()
     result_top = []
     query = set(query.lower().strip().split())
-
-    if DEBUG:
-        with open(INVERTED_INDEX_JSON, "r") as file, open(DOC_TERM_COUNT_JSON, "r") as file2:
-            inverted_index = json.load(file)
-            doc_term_count = json.load(file2)
-    else:
-        with open(INVERTED_INDEX_PICKLE, "rb") as file, open(DOC_TERM_COUNT_PICKLE, "rb") as file2:
-            inverted_index = pickle.load(file)
-            doc_term_count = pickle.load(file2)
-    print("loaded", len(inverted_index), len(doc_term_count))
+            
+    print("loaded", len(inv_idx), len(doc_term_count_file))
 
     # For each url, make a set of the query words it contains
     for word in query:
         if word not in STOP_WORDS:
             word = STEMMER.stem(word)
-            if word in inverted_index:
-                for url in inverted_index[word]:
+            if word in inv_idx:
+                for url in inv_idx[word]:
                     if url not in result_all:
                         result_all[url] = set()
                     result_all[url].add(word)
@@ -191,7 +183,7 @@ def query_db(query):
     for doc, word_set in sorted(result_all.items(), key=lambda x: -len(x[1])):
         if len(result_top) > 9:
             return sorted(result_top, key=lambda x: -x[1])
-        result_top.append((doc, calc_doc_score(result_all, word_set, doc, inverted_index, doc_term_count, query)))
+        result_top.append((doc, calc_doc_score(result_all, word_set, doc, inv_idx, doc_term_count_file, query)))
 
     # Stop after we get 10 results, or after we go through all docs
     if len(result_top):
@@ -207,6 +199,7 @@ def print_results(results):
             print(r)
     else:
         print("No results found")
+    print()
 
 
 def dump():
@@ -219,8 +212,8 @@ def dump():
     else:
         with open(INVERTED_INDEX_PICKLE, "wb") as inverted_index_file, \
                 open(DOC_TERM_COUNT_PICKLE, "wb") as doc_term_count_file:
-            pickle.dump(INVERTED_INDEX, inverted_index_file)
-            pickle.dump(DOC_TERM_COUNT, doc_term_count_file)
+            pickle.dump(INVERTED_INDEX, inverted_index_file, protocol=-1)
+            pickle.dump(DOC_TERM_COUNT, doc_term_count_file, protocol=-1)
 
 
 if __name__ == "__main__":
@@ -239,20 +232,34 @@ if __name__ == "__main__":
         add_tf_idf()
         dump()
 
-    search = input("Search: ").strip().lower()
+    print("Loading...")
+    if DEBUG:
+        with open(INVERTED_INDEX_JSON, "r") as file, open(DOC_TERM_COUNT_JSON, "r") as file2:
+            inverted_index = json.load(file)
+            doc_term_count = json.load(file2)
+    else:
+        with open(INVERTED_INDEX_PICKLE, "rb") as file, open(DOC_TERM_COUNT_PICKLE, "rb") as file2:
+            inverted_index = pickle.load(file)
+            doc_term_count = pickle.load(file2)
 
-    pr.enable()
+    while True:
+        search = input("Search (type q to quit): ").strip().lower()
 
-    full_results = query_db(search)
-    print_results(full_results)
+        if search.lower().strip() == "q":
+            break
 
-    pr.disable()
+        pr.enable()
 
-    # For dumping profile to a file
-    s = io.StringIO()
-    ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
-    ps.dump_stats(DUMP_FILE)
+        full_results = query_db(search, inverted_index, doc_term_count)
+        print_results(full_results)
 
-    out_stream = open(PROFILE_FILE, 'w')
-    ps = pstats.Stats(DUMP_FILE, stream=out_stream)
-    ps.strip_dirs().sort_stats('cumulative').print_stats()
+        pr.disable()
+
+        # For dumping profile to a file
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
+        ps.dump_stats(DUMP_FILE)
+
+        out_stream = open(PROFILE_FILE, 'w')
+        ps = pstats.Stats(DUMP_FILE, stream=out_stream)
+        ps.strip_dirs().sort_stats('cumulative').print_stats()
